@@ -55,6 +55,18 @@ export const createCourse = async (req, res) => {
  *         name: limit
  *         schema: { type: integer, default: 10 }
  *         description: Number of items per page
+ *       - in: query
+ *         name: sortby
+ *         schema:
+ *           type: string
+ *           enum: [Title, DescTitle, CreatedAt, DescCreatedAt]
+ *         description: Sort by field (prefix with 'Desc' for descending)
+ *       - in: query
+ *         name: populate
+ *         schema:
+ *           type: string
+ *           example: teacher, student
+ *         description: Include related models (teacher, student)
  *     responses:
  *       200:
  *         description: List of courses
@@ -68,11 +80,39 @@ export const getAllCourses = async (req, res) => {
 
     const total = await db.Course.count();
 
+    //sorting
+    let sortby = req.query.sortby || 'title';
+    let sortField = sortby;
+    let sortOrder = 'ASC';
+
+    //populate
+    const populate = req.query.populate?.toLowerCase().split(',').map(p => p.trim()) || [];
+    const include = [];
+
+    if (populate.includes('teacher')) {
+        include.push(db.Teacher);
+    }
+
+    if (populate.includes('student') || populate.includes('students')) {
+        include.push({
+            model: db.Student,
+            through: { attributes: [] },
+        });
+    }
+
+    if (sortby.startsWith('Desc')) {
+        sortField = sortby.substring(4);
+        sortOrder = 'DESC';
+    }
+
     try {
         const courses = await db.Course.findAll(
             {
                 // include: [db.Student, db.Teacher],
-                limit: limit, offset: (page - 1) * limit
+                limit: limit, 
+                offset: (page - 1) * limit, 
+                order: [[sortField, sortOrder]],
+                include: include,
             }
         );
         res.json({
@@ -99,6 +139,12 @@ export const getAllCourses = async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *       - in: query
+ *         name: populate
+ *         schema:
+ *           type: string
+ *           example: teacher,students
+ *         description: Include related models (e.g., teacher, students)
  *     responses:
  *       200:
  *         description: Course found
@@ -106,8 +152,23 @@ export const getAllCourses = async (req, res) => {
  *         description: Not found
  */
 export const getCourseById = async (req, res) => {
+
+    const populate = req.query.populate?.toLowerCase().split(',').map(p => p.trim()) || [];
+    const include = [];
+
+    if (populate.includes('teacher')) {
+        include.push(db.Teacher);
+    }
+
+    if (populate.includes('student') || populate.includes('students')) {
+        include.push({
+            model: db.Student,
+            through: { attributes: [] },
+        });
+    }
+
     try {
-        const course = await db.Course.findByPk(req.params.id, { include: [db.Student, db.Teacher] });
+        const course = await db.Course.findByPk(req.params.id, { include});
         if (!course) return res.status(404).json({ message: 'Not found' });
         res.json(course);
     } catch (err) {
